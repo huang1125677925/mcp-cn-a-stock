@@ -69,7 +69,7 @@ def load_data_msd_batch(
   t1 = time.time()
   raw_datas = msd_fetch_once("msd://" + msd_host, sqls)
   t2 = time.time()
-  logging.info(f"fetch data cost {t2 - t1} seconds")
+  logging.info(f"fetch data cost {t2 - t1} seconds, symbols: {','.join(symbols)}")
 
   # group by symbol -> kind -> field
   grouped = {}

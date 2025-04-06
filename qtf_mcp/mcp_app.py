@@ -18,6 +18,8 @@ async def brief(symbol: str) -> str:
   """
   raw_data = await research.load_raw_data(symbol)
   buf = StringIO()
+  if len(raw_data) == 0:
+    return "No data found for symbol: " + symbol
   research.build_basic_data(buf, symbol, raw_data)
   research.build_trading_data(buf, symbol, raw_data)
   """Get brief information for a given stock symbol"""
@@ -35,6 +37,8 @@ async def medium(symbol: str) -> str:
   """
   raw_data = await research.load_raw_data(symbol)
   buf = StringIO()
+  if len(raw_data) == 0:
+    return "No data found for symbol: " + symbol
   research.build_basic_data(buf, symbol, raw_data)
   research.build_trading_data(buf, symbol, raw_data)
   research.build_financial_data(buf, symbol, raw_data)
@@ -53,6 +57,8 @@ async def full(symbol: str) -> str:
   """
   raw_data = await research.load_raw_data(symbol)
   buf = StringIO()
+  if len(raw_data) == 0:
+    return "No data found for symbol: " + symbol
   research.build_basic_data(buf, symbol, raw_data)
   research.build_trading_data(buf, symbol, raw_data)
   research.build_financial_data(buf, symbol, raw_data)
