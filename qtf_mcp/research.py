@@ -23,6 +23,12 @@ async def load_raw_data(symbol: str, end_date=None) -> Dict[str, ndarray]:
   )
 
 
+def is_stock(symbol: str) -> bool:
+  if symbol.startswith("SH6") or symbol.startswith("SZ00") or symbol.startswith("SZ30"):
+    return True
+  return False
+
+
 def build_stock_data(symbol: str, raw_data: Dict[str, ndarray]) -> str:
   md = StringIO()
   build_basic_data(md, symbol, raw_data)
@@ -58,23 +64,28 @@ def build_basic_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> str:
   symbol, name = list(symbol_with_name([symbol]))[0]
   sector = " ".join(filter_sector(data["SECTOR"]))
   data_date = datetime.datetime.fromtimestamp(data["DATE"][-1] / 1e9)
-  fin, _ = data["_DS_FINANCE"]
-  last_fin_date = datetime.datetime.fromtimestamp(fin["DATE"][-1] / 1e9)
-  fin_ratio = est_fin_ratio(last_fin_date)
+  if is_stock(symbol):
+    fin, _ = data["_DS_FINANCE"]
+    last_fin_date = datetime.datetime.fromtimestamp(fin["DATE"][-1] / 1e9)
+    fin_ratio = est_fin_ratio(last_fin_date)
 
   print(f"- 股票代码: {symbol}", file=fp)
   print(f"- 股票名称: {name}", file=fp)
   print(f"- 数据日期: {data_date.strftime('%Y-%m-%d')}", file=fp)
   print(f"- 行业概念: {sector}", file=fp)
-  print(f"- 市盈率: {(data['CLOSE2'][-1] / data['EPS'][-1]) * fin_ratio:.2f}", file=fp)
-  print(f"- 市净率: {data['CLOSE2'][-1] / data['EPSU'][-1] * fin_ratio:.2f}", file=fp)
-  print(f"- 净资产收益率: {data['ROE'][-1]:.2f}", file=fp)
+  if is_stock(symbol):
+    print(
+      f"- 市盈率: {(data['CLOSE2'][-1] / data['EPS'][-1]) * fin_ratio:.2f}", file=fp
+    )
+    print(f"- 市净率: {data['CLOSE2'][-1] / data['EPSU'][-1] * fin_ratio:.2f}", file=fp)
+    print(f"- 净资产收益率: {data['ROE'][-1]:.2f}", file=fp)
   print("", file=fp)
 
 
 def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> str:
   close = data["CLOSE"]
-  tcap = data["TCAP"]
+  if is_stock(symbol):
+    tcap = data["TCAP"]
   volume = data["VOLUME"]
   high = data["HIGH"]
   low = data["LOW"]
@@ -111,12 +122,13 @@ def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> str
     print(f"- {p}日均量(万手): {volume[-p:].mean() / 1e6:.2f}", file=fp)
   print("", file=fp)
 
-  print("## 换手率", file=fp)
-  print(f"- 当日: {volume[-1] / tcap[-1]:.2%}", file=fp)
-  for p in periods:
-    print(f"- {p}日均换手: {volume[-p:].mean() / tcap[-1]:.2%}", file=fp)
-    print(f"- {p}日总换手: {volume[-p:].sum() / tcap[-1]:.2%}", file=fp)
-  print("", file=fp)
+  if is_stock(symbol):
+    print("## 换手率", file=fp)
+    print(f"- 当日: {volume[-1] / tcap[-1]:.2%}", file=fp)
+    for p in periods:
+      print(f"- {p}日均换手: {volume[-p:].mean() / tcap[-1]:.2%}", file=fp)
+      print(f"- {p}日总换手: {volume[-p:].sum() / tcap[-1]:.2%}", file=fp)
+    print("", file=fp)
 
 
 def build_technical_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> str:
@@ -168,6 +180,8 @@ def build_technical_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> s
 
 
 def build_financial_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> str:
+  if not is_stock(symbol):
+    return
   fin, _ = data["_DS_FINANCE"]
   dates = fin["DATE"]
   max_years = 5
