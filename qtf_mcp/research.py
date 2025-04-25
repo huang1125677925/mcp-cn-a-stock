@@ -82,6 +82,31 @@ def build_basic_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> str:
   print("", file=fp)
 
 
+def today_volume_est_ratio(data: Dict[str, ndarray], now: int = 0) -> float:
+  data_dt = datetime.datetime.fromtimestamp(data["DATE"][-1] / 1e9)
+  now_dt = (
+    datetime.datetime.now() if now == 0 else datetime.datetime.fromtimestamp(now / 1e9)
+  )
+
+  data_date = data_dt.strftime("%Y-%m-%d")
+  now_date = now_dt.strftime("%Y-%m-%d")
+  if data_date != now_date:
+    return 1
+  now_time = now_dt.strftime("%H:%M:%S")
+  if now_time >= "09:30:00" and now_time < "11:30:00":
+    start_dt = now_dt.replace(hour=9, minute=30, second=0)
+    minutes = (now_dt - start_dt).seconds / 60
+    return 240 / (minutes + 1)
+  elif now_time >= "11:30:00" and now_time < "13:00:00":
+    return 2
+  elif now_time >= "13:00:00" and now_time < "15:00:00":
+    start_dt = now_dt.replace(hour=13, minute=0, second=0)
+    minutes = (now_dt - start_dt).seconds / 60
+    return 240 / (120 + minutes + 1)
+  else:
+    return 1
+
+
 def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> str:
   close = data["CLOSE"]
   if is_stock(symbol):
@@ -89,6 +114,7 @@ def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> str
   volume = data["VOLUME"]
   high = data["HIGH"]
   low = data["LOW"]
+  today_vol_est_ratio = today_volume_est_ratio(data)
 
   periods = list(filter(lambda n: n <= len(close), [5, 20, 60, 120, 240]))
 
@@ -117,14 +143,14 @@ def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> str
   print("", file=fp)
 
   print("## 成交量(万手)", file=fp)
-  print(f"- 当日: {volume[-1] / 1e6:.2f}", file=fp)
+  print(f"- 当日: {volume[-1] * today_vol_est_ratio / 1e6:.2f}", file=fp)
   for p in periods:
     print(f"- {p}日均量(万手): {volume[-p:].mean() / 1e6:.2f}", file=fp)
   print("", file=fp)
 
   if is_stock(symbol):
     print("## 换手率", file=fp)
-    print(f"- 当日: {volume[-1] / tcap[-1]:.2%}", file=fp)
+    print(f"- 当日: {volume[-1] * today_vol_est_ratio / tcap[-1]:.2%}", file=fp)
     for p in periods:
       print(f"- {p}日均换手: {volume[-p:].mean() / tcap[-1]:.2%}", file=fp)
       print(f"- {p}日总换手: {volume[-p:].sum() / tcap[-1]:.2%}", file=fp)
