@@ -5,7 +5,11 @@ from mcp.server.fastmcp import FastMCP
 from . import research
 
 # Create an MCP server
-mcp_app = FastMCP("CnStock", sse_path="/cnstock/sse", message_path="/cnstock/messages/")
+mcp_app = FastMCP(
+  "CnStock",
+  sse_path="/cnstock/sse",
+  message_path="/cnstock/messages/",
+)
 
 
 @mcp_app.tool()

@@ -15,7 +15,7 @@ if msd_host == "":
   raise ValueError("MSD_HOST is not set")
 
 
-STOCK_SECTOR: Dict[str, List[str]] = None
+STOCK_SECTOR: Dict[str, List[str]] | None = None
 
 
 def get_stock_sector():
