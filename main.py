@@ -1,14 +1,16 @@
+from typing import Literal
+
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
 import logging
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
 import click
 
 from qtf_mcp import mcp_app
 from qtf_mcp.symbols import load_symbols
-
-logging.basicConfig(level=logging.DEBUG)
 
 
 @click.command()
@@ -19,7 +21,7 @@ logging.basicConfig(level=logging.DEBUG)
   default="stdio",
   help="Transport type",
 )
-def main(port: int, transport: str) -> int:
+def main(port: int, transport: Literal["stdio", "sse", "streamable-http"]) -> int:
   load_symbols()
   mcp_app.run(transport)
   return 0
