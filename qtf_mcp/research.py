@@ -58,28 +58,45 @@ def est_fin_ratio(last_fin_date: datetime.datetime) -> float:
     return 0
 
 
-def build_basic_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> str:
+def yearly_fin_index(dates: ndarray) -> int:
+  """
+  Returns the index of the last December in the dates array.
+  If no December is found, returns -1.
+  """
+  for i in range(len(dates) - 1, -1, -1):
+    date = datetime.datetime.fromtimestamp(dates[i] / 1e9)
+    if date.month == 12:
+      return i
+  return -1
+
+
+def build_basic_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> None:
   print("# 基本数据", file=fp)
   print("", file=fp)
   symbol, name = list(symbol_with_name([symbol]))[0]
-  sector = " ".join(filter_sector(data["SECTOR"]))
+  sector = " ".join(filter_sector(data["SECTOR"]))  # type: ignore
   data_date = datetime.datetime.fromtimestamp(data["DATE"][-1] / 1e9)
   if is_stock(symbol):
     fin, _ = data["_DS_FINANCE"]
-    last_fin_date = datetime.datetime.fromtimestamp(fin["DATE"][-1] / 1e9)
-    fin_ratio = est_fin_ratio(last_fin_date)
+    last_year_index = yearly_fin_index(fin["DATE"])
+  else:
+    last_year_index = -1
 
   print(f"- 股票代码: {symbol}", file=fp)
   print(f"- 股票名称: {name}", file=fp)
   print(f"- 数据日期: {data_date.strftime('%Y-%m-%d')}", file=fp)
   print(f"- 行业概念: {sector}", file=fp)
   if is_stock(symbol):
+    total_shares = data["TCAP"][-1]  # Convert to shares
+    total_amount = total_shares * data["CLOSE2"][-1]
+    net_profit = data["NP"][last_year_index] * 10000
+    pe_static = total_amount / net_profit if net_profit != 0 else float("inf")
     print(
-      f"- 市盈率: {(data['CLOSE2'][-1] / data['EPS'][-1]) * fin_ratio:.2f}",
+      f"- 市盈率(静): {pe_static:.2f}",
       file=fp,
     )
     print(
-      f"- 市净率: {data['CLOSE2'][-1] / data['EPSU'][-1] * fin_ratio:.2f}",
+      f"- 市净率: {data['CLOSE2'][-1] / data['NAVPS'][-1]:.2f}",
       file=fp,
     )
     print(f"- 净资产收益率: {data['ROE'][-1]:.2f}", file=fp)
@@ -111,10 +128,8 @@ def today_volume_est_ratio(data: Dict[str, ndarray], now: int = 0) -> float:
     return 1
 
 
-def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> str:
+def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> None:
   close = data["CLOSE"]
-  if is_stock(symbol):
-    tcap = data["TCAP"]
   volume = data["VOLUME"]
   high = data["HIGH"]
   low = data["LOW"]
@@ -153,6 +168,7 @@ def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> str
   print("", file=fp)
 
   if is_stock(symbol):
+    tcap = data["TCAP"]
     print("## 换手率", file=fp)
     print(f"- 当日: {volume[-1] * today_vol_est_ratio / tcap[-1]:.2%}", file=fp)
     for p in periods:
@@ -161,7 +177,7 @@ def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> str
     print("", file=fp)
 
 
-def build_technical_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> str:
+def build_technical_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> None:
   close = data["CLOSE"]
   high = data["HIGH"]
   low = data["LOW"]
@@ -180,7 +196,7 @@ def build_technical_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> s
   rsi_12 = talib.RSI(close, timeperiod=12)
   rsi_24 = talib.RSI(close, timeperiod=24)
 
-  bb_upper, bb_middle, bb_lower = talib.BBANDS(close, matype=talib.MA_Type.T3)
+  bb_upper, bb_middle, bb_lower = talib.BBANDS(close, matype=talib.MA_Type.T3)  # type: ignore
 
   date = [
     datetime.datetime.fromtimestamp(d / 1e9).strftime("%Y-%m-%d") for d in data["DATE"]
@@ -209,7 +225,7 @@ def build_technical_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> s
   print("", file=fp)
 
 
-def build_financial_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> str:
+def build_financial_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> None:
   if not is_stock(symbol):
     return
   fin, _ = data["_DS_FINANCE"]
@@ -219,11 +235,12 @@ def build_financial_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> s
   print("", file=fp)
   years = 0
   fields = [
-    ("主营收入(亿元)", "MR", 10000),
-    ("净利润(亿元)", "NP", 10000),
-    ("每股收益", "EPS", 1),
-    ("每股净资产", "NAVPS", 1),
-    ("净资产收益率", "ROE", 1),
+    # name, id, div, show
+    ("主营收入(亿元)", "MR", 10000, True),
+    ("净利润(亿元)", "NP", 10000, True),
+    ("每股收益", "EPS", 1, True),
+    ("每股净资产", "NAVPS", 1, True),
+    ("净资产收益率", "ROE", 1, True),
   ]
 
   rows = []
@@ -232,8 +249,9 @@ def build_financial_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> s
     if date.month != 12 or years >= max_years:
       continue
     row = [date.strftime("%Y年度")]
-    for _, field, div in fields:
-      row.append(fin[field][i] / div)
+    for _, field, div, show in fields:
+      if show:
+        row.append(fin[field][i] / div)
     rows.append(row)
     years += 1
 

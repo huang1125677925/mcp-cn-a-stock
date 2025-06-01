@@ -18,12 +18,12 @@ if msd_host == "":
 STOCK_SECTOR: Dict[str, List[str]] | None = None
 
 
-def get_stock_sector():
+def get_stock_sector() -> Dict[str, List[str]]:
   global STOCK_SECTOR
   if STOCK_SECTOR is None:
     with open(stock_sector_data, "r", encoding="utf-8") as f:
       STOCK_SECTOR = json.load(f)
-  return STOCK_SECTOR
+  return STOCK_SECTOR if STOCK_SECTOR is not None else {}
 
 
 async def load_data_msd(
