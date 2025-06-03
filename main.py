@@ -1,5 +1,3 @@
-from typing import Literal
-
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -17,13 +15,15 @@ from qtf_mcp.symbols import load_symbols
 @click.option("--port", default=8000, help="Port to listen on for SSE")
 @click.option(
   "--transport",
-  type=click.Choice(["stdio", "sse"]),
-  default="stdio",
+  type=click.Choice(["stdio", "sse", "http"], case_sensitive=False),
+  default="sse",
   help="Transport type",
 )
-def main(port: int, transport: Literal["stdio", "sse", "streamable-http"]) -> int:
+def main(port: int, transport: str) -> int:
   load_symbols()
-  mcp_app.run(transport)
+  if transport == "http":
+    transport = "streamable-http"
+  mcp_app.run(transport)  # type: ignore
   return 0
 
 

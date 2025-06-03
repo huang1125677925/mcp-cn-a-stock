@@ -9,6 +9,7 @@ mcp_app = FastMCP(
   "CnStock",
   sse_path="/cnstock/sse",
   message_path="/cnstock/messages/",
+  streamable_http_path="/cnstock/mcp",
 )
 
 
