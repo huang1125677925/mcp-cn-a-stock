@@ -49,11 +49,13 @@ def symbol_sqls(sqls: Dict[str, str], symbol: str, start_date: str, end_date: st
   sql1 = f"SELECT * FROM kline1d.{symbol} WHERE __date__ BETWEEN '{start_date}' AND '{end_date}'"
   sql2 = f"SELECT * FROM finance.{symbol}"
   sql3 = f"SELECT DATE,BS,DS,SD FROM divid.{symbol}"
+  sql4 = f"SELECT * FROM fundflow.{symbol} WHERE __date__ BETWEEN '{start_date}' AND '{end_date}'"
 
   if symbol.startswith("SH6") or symbol.startswith("SZ00") or symbol.startswith("SZ30"):
     sqls[f"{symbol}.KLINE"] = sql1
     sqls[f"{symbol}.FINANCE"] = sql2
     sqls[f"{symbol}.DIVID"] = sql3
+    sqls[f"{symbol}.FUNDFLOW"] = sql4
   else:
     sqls[f"{symbol}.KLINE"] = sql1
 
@@ -164,6 +166,14 @@ def load_data_msd_batch(
       symbol_data["PRICE"] = symbol_data["CLOSE"]
 
     symbol_data["SECTOR"] = get_stock_sector().get(k, [])
+
+    fund_flow = g.get("FUNDFLOW", None)
+    if fund_flow is not None:
+      for field, arr in fund_flow.items():
+        if field == "DATE":
+          continue
+        symbol_data[field] = arr
+      symbol_data["_DS_FUNDFLOW"] = (fund_flow, "1d")
 
     datas[k] = symbol_data
 

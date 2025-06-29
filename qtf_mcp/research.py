@@ -128,12 +128,40 @@ def today_volume_est_ratio(data: Dict[str, ndarray], now: int = 0) -> float:
     return 1
 
 
+FUND_FLOW_FIELDS = [
+  ("主力", "A"),
+  ("超大单", "XL"),
+  ("大单", "L"),
+  ("中单", "M"),
+  ("小单", "S"),
+]
+
+
+def build_fund_flow(field: tuple[str, str], data: Dict[str, ndarray]) -> str:
+  field_amount = field[1] + "_A"
+  field_ratio = field[1] + "_R"
+  value_amount = data.get(field_amount, None)
+  value_ratio = data.get(field_ratio, None)
+  if value_amount is None or value_ratio is None:
+    return ""
+
+  kind = field[0]
+  amount = value_amount[-1] / 1e8  # Convert to billions
+  ratio = abs(value_ratio[-1])
+  in_out = "流入" if amount > 0 else "流出"
+  amount = abs(amount)  # Use absolute value for display
+  return f"- {kind} {in_out}: {amount:.2f}亿, 占比: {ratio:.2%}"
+
+
 def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> None:
+  today_vol_est_ratio = today_volume_est_ratio(data)
   close = data["CLOSE"]
   volume = data["VOLUME"]
+  volume[-1] = volume[-1] * today_vol_est_ratio  # Adjust today's volume
+  amount = data["AMOUNT"] / 1e8
+  amount[-1] = amount[-1] * today_vol_est_ratio  # Adjust today's amount
   high = data["HIGH"]
   low = data["LOW"]
-  today_vol_est_ratio = today_volume_est_ratio(data)
 
   periods = list(filter(lambda n: n <= len(close), [5, 20, 60, 120, 240]))
 
@@ -162,15 +190,28 @@ def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> Non
   print("", file=fp)
 
   print("## 成交量(万手)", file=fp)
-  print(f"- 当日: {volume[-1] * today_vol_est_ratio / 1e6:.2f}", file=fp)
+  print(f"- 当日: {volume[-1] / 1e6:.2f}", file=fp)
   for p in periods:
     print(f"- {p}日均量(万手): {volume[-p:].mean() / 1e6:.2f}", file=fp)
+  print("", file=fp)
+
+  print("## 成交额(亿)", file=fp)
+  print(f"- 当日: {amount[-1]:.2f}", file=fp)
+  for p in periods:
+    print(f"- {p}日均额(亿): {amount[-p:].mean():.2f}", file=fp)
+  print("", file=fp)
+
+  print("## 资金流向", file=fp)
+  for field in FUND_FLOW_FIELDS:
+    value = build_fund_flow(field, data)
+    if value:
+      print(value, file=fp)
   print("", file=fp)
 
   if is_stock(symbol):
     tcap = data["TCAP"]
     print("## 换手率", file=fp)
-    print(f"- 当日: {volume[-1] * today_vol_est_ratio / tcap[-1]:.2%}", file=fp)
+    print(f"- 当日: {volume[-1] / tcap[-1]:.2%}", file=fp)
     for p in periods:
       print(f"- {p}日均换手: {volume[-p:].mean() / tcap[-1]:.2%}", file=fp)
       print(f"- {p}日总换手: {volume[-p:].sum() / tcap[-1]:.2%}", file=fp)
