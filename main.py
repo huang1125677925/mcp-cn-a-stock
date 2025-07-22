@@ -23,6 +23,7 @@ def main(port: int, transport: str) -> int:
   load_symbols()
   if transport == "http":
     transport = "streamable-http"
+  mcp_app.settings.port = port
   mcp_app.run(transport)  # type: ignore
   return 0
 
