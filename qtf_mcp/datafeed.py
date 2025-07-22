@@ -27,10 +27,10 @@ def get_stock_sector() -> Dict[str, List[str]]:
 
 
 async def load_data_msd(
-  symbol: str, start_date: str, end_date: str, n: int = 0
+  symbol: str, start_date: str, end_date: str, n: int = 0, who: str = ""
 ) -> Dict[str, np.ndarray]:
   # logging.info(f"align data {symbol} cost {t3 - t2} seconds")
-  datas = load_data_msd_batch([symbol], start_date, end_date, n)
+  datas = load_data_msd_batch([symbol], start_date, end_date, n, who)
 
   return datas.get(symbol, {})
 
@@ -61,7 +61,7 @@ def symbol_sqls(sqls: Dict[str, str], symbol: str, start_date: str, end_date: st
 
 
 def load_data_msd_batch(
-  symbols: List[str], start_date: str, end_date: str, n: int = 0
+  symbols: List[str], start_date: str, end_date: str, n: int = 0, who: str = ""
 ) -> Dict[str, Dict[str, np.ndarray]]:
   sqls = {}
   for symbol in symbols:
@@ -71,7 +71,7 @@ def load_data_msd_batch(
   t1 = time.time()
   raw_datas = msd_fetch_once("msd://" + msd_host, sqls)
   t2 = time.time()
-  logging.info(f"fetch data cost {t2 - t1} seconds, symbols: {','.join(symbols)}")
+  logging.info(f"{who} fetch data cost {t2 - t1} seconds, symbols: {','.join(symbols)}")
 
   # group by symbol -> kind -> field
   grouped = {}

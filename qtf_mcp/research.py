@@ -10,7 +10,9 @@ from .datafeed import load_data_msd
 from .symbols import symbol_with_name
 
 
-async def load_raw_data(symbol: str, end_date=None) -> Dict[str, ndarray]:
+async def load_raw_data(
+  symbol: str, end_date=None, who: str = ""
+) -> Dict[str, ndarray]:
   if end_date is None:
     end_date = datetime.datetime.now() + datetime.timedelta(days=1)
   if type(end_date) == str:
@@ -19,7 +21,7 @@ async def load_raw_data(symbol: str, end_date=None) -> Dict[str, ndarray]:
   start_date = end_date - datetime.timedelta(days=365 * 2)
 
   return await load_data_msd(
-    symbol, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
+    symbol, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"), 0, who
   )
 
 
