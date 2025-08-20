@@ -9,6 +9,10 @@
       "type": "debugpy",
       "request": "launch",
       "program": "main.py",
+      "args": [
+        "--transport=http"
+      ],
+      "justMyCode": false,
       "console": "integratedTerminal",
     }
   ]

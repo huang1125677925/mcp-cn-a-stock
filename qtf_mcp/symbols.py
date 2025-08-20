@@ -4,6 +4,8 @@ from typing import Dict, Iterable, Tuple
 
 SYMBOLS_SHSZ: Dict[str, Tuple[str, int, int]] = {}
 
+logger = logging.getLogger("qtf_mcp")
+
 
 def load_markets(fname: str):
   try:
@@ -12,7 +14,7 @@ def load_markets(fname: str):
       for o in m["items"]:
         SYMBOLS_SHSZ[o["code"]] = (o["name"], 2, 2)
   except:
-    logging.warning("load markets failed", exc_info=True)
+    logger.warning("load markets failed", exc_info=True)
 
 
 def load_symbols():

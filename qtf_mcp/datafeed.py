@@ -7,11 +7,13 @@ from typing import Dict, List
 import numpy as np
 from qtf import msd_fetch_once, pre_adjustment
 
+logger = logging.getLogger("qtf_mcp")
+
 msd_host = os.environ.get("MSD_HOST", "")
 stock_sector_data = os.environ.get("STOCK_TO_SECTOR_DATA", "confs/stock_sector.json")
 
 if msd_host == "":
-  logging.error("MSD_HOST is not set")
+  logger.error("MSD_HOST is not set")
   raise ValueError("MSD_HOST is not set")
 
 
@@ -29,7 +31,7 @@ def get_stock_sector() -> Dict[str, List[str]]:
 async def load_data_msd(
   symbol: str, start_date: str, end_date: str, n: int = 0, who: str = ""
 ) -> Dict[str, np.ndarray]:
-  # logging.info(f"align data {symbol} cost {t3 - t2} seconds")
+  # logger.info(f"align data {symbol} cost {t3 - t2} seconds")
   datas = load_data_msd_batch([symbol], start_date, end_date, n, who)
 
   return datas.get(symbol, {})
@@ -71,7 +73,7 @@ def load_data_msd_batch(
   t1 = time.time()
   raw_datas = msd_fetch_once("msd://" + msd_host, sqls)
   t2 = time.time()
-  logging.info(f"{who} fetch data cost {t2 - t1} seconds, symbols: {','.join(symbols)}")
+  logger.info(f"{who} fetch data cost {t2 - t1} seconds, symbols: {','.join(symbols)}")
 
   # group by symbol -> kind -> field
   grouped = {}
