@@ -2,9 +2,9 @@ import datetime
 from io import StringIO
 from typing import Dict, TextIO
 
+import numpy as np
 import talib
 from numpy import ndarray
-from qtf.indicators import KDJ, MACD
 
 from .datafeed import load_data_msd
 from .symbols import symbol_with_name
@@ -77,38 +77,35 @@ def build_basic_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> None:
   print("", file=fp)
   symbol, name = list(symbol_with_name([symbol]))[0]
   sector = " ".join(filter_sector(data["SECTOR"]))  # type: ignore
-  data_date = datetime.datetime.fromtimestamp(data["DATE"][-1] / 1e9)
-  if is_stock(symbol):
-    fin, _ = data["_DS_FINANCE"]
-    last_year_index = yearly_fin_index(fin["DATE"])
-  else:
-    last_year_index = -1
-
+  data_date = datetime.datetime.fromtimestamp(data["DATE"][-1])
+  
   print(f"- 股票代码: {symbol}", file=fp)
   print(f"- 股票名称: {name}", file=fp)
   print(f"- 数据日期: {data_date.strftime('%Y-%m-%d')}", file=fp)
   print(f"- 行业概念: {sector}", file=fp)
+  
   if is_stock(symbol):
-    total_shares = data["TCAP"][-1]  # Convert to shares
-    total_amount = total_shares * data["CLOSE2"][-1]
-    net_profit = data["NP"][last_year_index] * 10000
-    pe_static = total_amount / net_profit if net_profit != 0 else float("inf")
-    print(
-      f"- 市盈率(静): {pe_static:.2f}",
-      file=fp,
-    )
-    print(
-      f"- 市净率: {data['CLOSE2'][-1] / data['NAVPS'][-1]:.2f}",
-      file=fp,
-    )
-    print(f"- 净资产收益率: {data['ROE'][-1]:.2f}", file=fp)
+    # 使用AkShare提供的财务数据
+    total_market_cap = data.get("TCAP", [0])[-1]
+    if total_market_cap > 0:
+      # TCAP已经是总市值（单位：万元），转换为亿元
+      print(f"- 总市值: {total_market_cap/10000:.2f}亿元", file=fp)
+    
+    # 检查是否有财务数据
+    navps = data.get("NAVPS", [1.0])[-1]
+    if navps != 1.0:
+      print(f"- 市净率: {data['CLOSE2'][-1] / navps:.2f}", file=fp)
+    
+    roe = data.get("ROE", [0.0])[-1]
+    if roe != 0.0:
+      print(f"- 净资产收益率: {roe:.2f}%", file=fp)
   print("", file=fp)
 
 
 def today_volume_est_ratio(data: Dict[str, ndarray], now: int = 0) -> float:
-  data_dt = datetime.datetime.fromtimestamp(data["DATE"][-1] / 1e9)
+  data_dt = datetime.datetime.fromtimestamp(data["DATE"][-1])
   now_dt = (
-    datetime.datetime.now() if now == 0 else datetime.datetime.fromtimestamp(now / 1e9)
+    datetime.datetime.now() if now == 0 else datetime.datetime.fromtimestamp(now)
   )
 
   data_date = data_dt.strftime("%Y-%m-%d")
@@ -220,6 +217,48 @@ def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> Non
     print("", file=fp)
 
 
+def calculate_kdj(close: ndarray, high: ndarray, low: ndarray, n: int = 9, k: int = 3, d: int = 3) -> tuple[ndarray, ndarray, ndarray]:
+    """计算KDJ指标"""
+    rsv = np.zeros_like(close)
+    k_values = np.zeros_like(close)
+    d_values = np.zeros_like(close)
+    j_values = np.zeros_like(close)
+    
+    for i in range(n-1, len(close)):
+        highest_high = np.max(high[i-n+1:i+1])
+        lowest_low = np.min(low[i-n+1:i+1])
+        
+        if highest_high == lowest_low:
+            rsv[i] = 50
+        else:
+            rsv[i] = 100 * (close[i] - lowest_low) / (highest_high - lowest_low)
+    
+    # 计算K值
+    k_values[n-1] = 50
+    for i in range(n, len(close)):
+        k_values[i] = (k-1)/k * k_values[i-1] + 1/k * rsv[i]
+    
+    # 计算D值
+    d_values[n-1] = 50
+    for i in range(n, len(close)):
+        d_values[i] = (d-1)/d * d_values[i-1] + 1/d * k_values[i]
+    
+    # 计算J值
+    j_values = 3 * k_values - 2 * d_values
+    
+    return k_values, d_values, j_values
+
+
+def calculate_macd(close: ndarray, fast: int = 12, slow: int = 26, signal: int = 9) -> tuple[ndarray, ndarray, ndarray]:
+    """计算MACD指标"""
+    ema_fast = talib.EMA(close, timeperiod=fast)
+    ema_slow = talib.EMA(close, timeperiod=slow)
+    macd_line = ema_fast - ema_slow
+    signal_line = talib.EMA(macd_line, timeperiod=signal)
+    histogram = macd_line - signal_line
+    return macd_line, signal_line, histogram
+
+
 def build_technical_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> None:
   close = data["CLOSE"]
   high = data["HIGH"]
@@ -231,9 +270,9 @@ def build_technical_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> N
   print("# 技术指标(最近30日)", file=fp)
   print("", file=fp)
 
-  kdj_k, kdj_d, kdj_j = KDJ(close, high, low, 9, 3)
+  kdj_k, kdj_d, kdj_j = calculate_kdj(close, high, low, 9, 3)
 
-  macd_diff, macd_dea = MACD(close, 12, 26, 9)
+  macd_diff, macd_dea, _ = calculate_macd(close, 12, 26, 9)
 
   rsi_6 = talib.RSI(close, timeperiod=6)
   rsi_12 = talib.RSI(close, timeperiod=12)
@@ -271,39 +310,55 @@ def build_technical_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> N
 def build_financial_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> None:
   if not is_stock(symbol):
     return
-  fin, _ = data["_DS_FINANCE"]
-  dates = fin["DATE"]
-  max_years = 5
+  
   print("# 财务数据", file=fp)
   print("", file=fp)
-  years = 0
-  fields = [
-    # name, id, div, show
-    ("主营收入(亿元)", "MR", 10000, True),
-    ("净利润(亿元)", "NP", 10000, True),
-    ("每股收益", "EPS", 1, True),
-    ("每股净资产", "NAVPS", 1, True),
-    ("净资产收益率", "ROE", 1, True),
-  ]
+  
+  # 检查是否有财务数据
+  if "_DS_FINANCE" not in data:
+    print("- 暂无财务数据", file=fp)
+    print("", file=fp)
+    return
+    
+  try:
+    fin, _ = data["_DS_FINANCE"]
+    dates = fin["DATE"]
+    max_years = 5
+    years = 0
+    fields = [
+      # name, id, div, show
+      ("主营收入(亿元)", "MR", 10000, True),
+      ("净利润(亿元)", "NP", 10000, True),
+      ("每股收益", "EPS", 1, True),
+      ("每股净资产", "NAVPS", 1, True),
+      ("净资产收益率", "ROE", 1, True),
+    ]
 
-  rows = []
-  for i in range(len(dates) - 1, 0, -1):
-    date = datetime.datetime.fromtimestamp(dates[i] / 1e9)
-    if date.month != 12 or years >= max_years:
-      continue
-    row = [date.strftime("%Y年度")]
-    for _, field, div, show in fields:
-      if show:
-        row.append(fin[field][i] / div)
-    rows.append(row)
-    years += 1
+    rows = []
+    for i in range(len(dates) - 1, 0, -1):
+      date = datetime.datetime.fromtimestamp(dates[i] / 1e9)
+      if date.month != 12 or years >= max_years:
+        continue
+      row = [date.strftime("%Y年度")]
+      for _, field, div, show in fields:
+        if show and field in fin:
+          row.append(fin[field][i] / div)
+        else:
+          row.append(0.0)
+      rows.append(row)
+      years += 1
 
-  print("| 指标 | " + " ".join([f"{r[0]} |" for r in rows]), file=fp)
-  print("| --- " * (len(rows) + 1) + "|", file=fp)
-  for i in range(1, len(rows[0])):
-    print(
-      f"| {fields[i - 1][0]} | " + " ".join([f"{r[i]:.2f} |" for r in rows]),
-      file=fp,
-    )
-
+    if rows:
+      print("| 指标 | " + " ".join([f"{r[0]} |" for r in rows]), file=fp)
+      print("| --- " * (len(rows) + 1) + "|", file=fp)
+      for i in range(1, len(rows[0])):
+        print(
+          f"| {fields[i - 1][0]} | " + " ".join([f"{r[i]:.2f} |" for r in rows]),
+          file=fp,
+        )
+    else:
+      print("- 暂无年度财务数据", file=fp)
+  except Exception as e:
+    print(f"- 财务数据获取失败: {str(e)}", file=fp)
+  
   print("", file=fp)
