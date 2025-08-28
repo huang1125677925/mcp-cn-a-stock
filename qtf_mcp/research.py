@@ -6,8 +6,8 @@ import numpy as np
 import talib
 from numpy import ndarray
 
-from .datafeed import load_data_msd
-from .symbols import symbol_with_name
+from .datafeed import load_data_msd, load_data_akshare_batch
+from .symbols import symbol_with_name, get_symbols_by_sector, filter_main_board_symbols, filter_star_board_symbols, filter_gem_board_symbols
 
 
 async def load_raw_data(
@@ -208,13 +208,14 @@ def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> Non
   print("", file=fp)
 
   if is_stock(symbol):
-    tcap = data["TCAP"]
-    print("## 换手率", file=fp)
-    print(f"- 当日: {volume[-1] / tcap[-1]:.2%}", file=fp)
-    for p in periods:
-      print(f"- {p}日均换手: {volume[-p:].mean() / tcap[-1]:.2%}", file=fp)
-      print(f"- {p}日总换手: {volume[-p:].sum() / tcap[-1]:.2%}", file=fp)
-    print("", file=fp)
+    tcap = data.get("TCAP", None)
+    if tcap is not None and len(tcap) > 0 and tcap[-1] > 0:
+      print("## 换手率", file=fp)
+      print(f"- 当日: {volume[-1] / tcap[-1]:.2%}", file=fp)
+      for p in periods:
+        print(f"- {p}日均换手: {volume[-p:].mean() / tcap[-1]:.2%}", file=fp)
+        print(f"- {p}日总换手: {volume[-p:].sum() / tcap[-1]:.2%}", file=fp)
+      print("", file=fp)
 
 
 def calculate_kdj(close: ndarray, high: ndarray, low: ndarray, n: int = 9, k: int = 3, d: int = 3) -> tuple[ndarray, ndarray, ndarray]:
@@ -362,3 +363,129 @@ def build_financial_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> N
     print(f"- 财务数据获取失败: {str(e)}", file=fp)
   
   print("", file=fp)
+
+
+async def load_sector_basic_data(
+    sector_name: str, board_type: str = "all", limit: int = 50, who: str = ""
+) -> str:
+    """获取指定板块股票的基础数据列表
+    
+    Args:
+        sector_name: 板块名称
+        board_type: 板块类型 ("main" 主板, "star" 科创板, "gem" 创业板, "all" 全部)
+        limit: 限制返回的股票数量
+        who: 请求来源标识
+    
+    Returns:
+        格式化的股票基础数据列表
+    """
+    # 获取板块内的所有股票代码
+    symbols = get_symbols_by_sector(sector_name)
+    
+    if not symbols:
+        return f"未找到板块 '{sector_name}' 的股票数据"
+    
+    # 根据板块类型过滤股票
+    if board_type == "main":
+        symbols = filter_main_board_symbols(symbols)
+    elif board_type == "star":
+        symbols = filter_star_board_symbols(symbols)
+    elif board_type == "gem":
+        symbols = filter_gem_board_symbols(symbols)
+    
+    if not symbols:
+        return f"在板块 '{sector_name}' 中未找到 {board_type} 类型的股票"
+    
+    # 限制股票数量
+    symbols = symbols[:limit]
+    
+    # 批量获取股票数据
+    end_date = datetime.datetime.now() + datetime.timedelta(days=1)
+    start_date = end_date - datetime.timedelta(days=30)  # 只获取最近30天数据以提高速度
+    
+    batch_data = await load_data_akshare_batch(
+        symbols, 
+        start_date.strftime("%Y-%m-%d"), 
+        end_date.strftime("%Y-%m-%d"), 
+        0, 
+        who
+    )
+    
+    # 构建结果
+    buf = StringIO()
+    print(f"# {sector_name} 板块股票基础数据", file=buf)
+    print("", file=buf)
+    print(f"- 板块类型: {board_type}", file=buf)
+    print(f"- 股票数量: {len(batch_data)}", file=buf)
+    print(f"- 数据日期: {datetime.datetime.now().strftime('%Y-%m-%d')}", file=buf)
+    print("", file=buf)
+    
+    # 构建表格头
+    print("| 股票代码 | 股票名称 | 最新价格 | 涨跌幅 | 总市值(亿) | 成交额(亿) | 行业概念 |", file=buf)
+    print("| --- | --- | --- | --- | --- | --- | --- |", file=buf)
+    
+    # 处理每只股票的数据
+    stock_list = []
+    for symbol in symbols:
+        if symbol not in batch_data:
+            continue
+            
+        data = batch_data[symbol]
+        if len(data.get("CLOSE", [])) == 0:
+            continue
+            
+        # 获取股票名称
+        symbol_name_list = list(symbol_with_name([symbol]))
+        if symbol_name_list:
+            _, name = symbol_name_list[0]
+        else:
+            name = symbol
+            
+        # 基础数据
+        close = data["CLOSE"]
+        latest_price = close[-1]
+        
+        # 涨跌幅
+        if len(close) > 1:
+            change_pct = (close[-1] / close[-2] - 1) * 100
+        else:
+            change_pct = 0.0
+            
+        # 总市值
+        total_market_cap = data.get("TCAP", [0])[-1] / 10000 if data.get("TCAP", [0])[-1] > 0 else 0
+        
+        # 成交额
+        amount = data.get("AMOUNT", [0])[-1] / 1e8 if len(data.get("AMOUNT", [])) > 0 else 0
+        
+        # 行业概念（取前3个）
+        sectors = data.get("SECTOR", [])
+        sector_str = ", ".join(sectors[:3]) if sectors else "-"
+        
+        stock_info = {
+            'symbol': symbol,
+            'name': name,
+            'price': latest_price,
+            'change_pct': change_pct,
+            'market_cap': total_market_cap,
+            'amount': amount,
+            'sectors': sector_str
+        }
+        stock_list.append(stock_info)
+    
+    # 按涨跌幅排序
+    stock_list.sort(key=lambda x: x['change_pct'], reverse=True)
+    
+    # 输出表格数据
+    for stock in stock_list:
+        change_sign = "+" if stock['change_pct'] >= 0 else ""
+        print(
+            f"| {stock['symbol']} | {stock['name']} | {stock['price']:.3f} | "
+            f"{change_sign}{stock['change_pct']:.2f}% | {stock['market_cap']:.2f} | "
+            f"{stock['amount']:.2f} | {stock['sectors']} |",
+            file=buf
+        )
+    
+    print("", file=buf)
+    print(f"注: 数据按涨跌幅降序排列，共显示 {len(stock_list)} 只股票", file=buf)
+    
+    return buf.getvalue()
