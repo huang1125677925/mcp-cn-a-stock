@@ -2,6 +2,12 @@
 
 # SSE接口启动脚本
 
+# 先杀掉之前的SSE服务进程
+pkill -f "python3 main.py --transport sse"
+
+# 等待进程完全结束
+sleep 2
+
 # 激活虚拟环境
 source venv/bin/activate
 

@@ -52,6 +52,7 @@ python main.py --port 8000 --transport sse
 | `medium` | 中等深度分析 | brief数据 + 财务数据 |
 | `full` | 全面技术分析 | medium数据 + 技术指标 |
 | `latest_trading` | 最新交易数据 | 实时价格 + 涨跌幅 + 成交数据 |
+| `sector_stocks` | 板块股票列表 | 按板块分类的股票列表 + 板块信息 |
 
 **请求格式**:
 ```json
