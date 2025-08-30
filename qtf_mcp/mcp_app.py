@@ -315,3 +315,93 @@ async def latest_trading(symbol: str, ctx: Context) -> str:
     
   except Exception as e:
     return f"获取 {symbol} 最新交易数据时发生错误: {str(e)}"
+
+
+@mcp_app.tool()
+async def minute_trading(symbol: str, start_datetime: str, end_datetime: str, ctx: Context, period: str = "1") -> str:
+  """Get minute-level trading data for A-share stocks and indices within specified time range
+  
+  Args:
+    symbol (str): Stock symbol, must be in the format of "SH000001" or "SZ000001"
+    start_datetime (str): Start datetime in format "YYYY-MM-DD HH:MM:SS", e.g. "2023-12-11 09:30:00"
+    end_datetime (str): End datetime in format "YYYY-MM-DD HH:MM:SS", e.g. "2023-12-11 15:00:00"
+    period (str): Time interval in minutes, supports "1", "5", "15", "30", "60". Default is "1"
+  """
+  from .datafeed import fetch_minute_data
+  from .symbols import get_symbol_name
+  
+  who = ctx.request_context.request.client.host  # type: ignore
+  
+  try:
+    # 获取股票名称
+    stock_name = get_symbol_name(symbol)
+    
+    # 获取分钟级数据
+    minute_data = fetch_minute_data(symbol, start_datetime, end_datetime, period)
+    
+    if minute_data is None or minute_data.empty:
+      return f"无法获取股票 {symbol} ({stock_name}) 在 {start_datetime} 到 {end_datetime} 期间的{period}分钟级交易数据"
+    
+    # 判断是否为指数
+    is_index = symbol.startswith("SH000") or symbol.startswith("SZ399")
+    unit = "点" if is_index else "元"
+    
+    # 获取统计信息
+    total_records = len(minute_data)
+    first_record = minute_data.iloc[0]
+    last_record = minute_data.iloc[-1]
+    
+    # 计算期间涨跌幅
+    period_change = last_record['close'] - first_record['open']
+    period_change_pct = (period_change / first_record['open']) * 100 if first_record['open'] > 0 else 0
+    
+    # 计算期间最高最低价
+    period_high = minute_data['high'].max()
+    period_low = minute_data['low'].min()
+    
+    # 计算总成交量和成交额
+    total_volume = minute_data['volume'].sum()
+    total_amount = minute_data['amount'].sum() if 'amount' in minute_data.columns else minute_data['volume'].sum() * minute_data['close'].mean()
+    
+    # 构建分钟级交易数据报告
+    report = f"""# {stock_name}({symbol}) {period}分钟级交易数据
+
+## 基本信息
+- **股票名称**: {stock_name}
+- **股票代码**: {symbol}
+- **时间范围**: {start_datetime} 至 {end_datetime}
+- **时间间隔**: {period}分钟
+- **数据条数**: {total_records}条
+
+## 期间统计
+- **期初价格**: {first_record['open']:.2f}{unit} ({first_record['datetime'].strftime('%Y-%m-%d %H:%M:%S')})
+- **期末价格**: {last_record['close']:.2f}{unit} ({last_record['datetime'].strftime('%Y-%m-%d %H:%M:%S')})
+- **期间涨跌**: {period_change:+.2f}{unit}
+- **期间涨跌幅**: {period_change_pct:+.2f}%
+- **期间最高**: {period_high:.2f}{unit}
+- **期间最低**: {period_low:.2f}{unit}
+- **期间振幅**: {((period_high - period_low) / first_record['open'] * 100):.2f}%
+
+## 成交统计
+- **总成交量**: {total_volume:,.0f}{"手" if is_index else "股"}
+- **总成交额**: ¥{total_amount:,.2f}元
+- **平均每{period}分钟成交量**: {total_volume/total_records:,.0f}{"手" if is_index else "股"}
+
+## 详细数据（前10条）
+"""
+    
+    # 添加前10条详细数据
+    report += "\n| 时间 | 开盘 | 最高 | 最低 | 收盘 | 成交量 |\n"
+    report += "|------|------|------|------|------|--------|\n"
+    
+    for i in range(min(10, len(minute_data))):
+      row = minute_data.iloc[i]
+      report += f"| {row['datetime'].strftime('%H:%M')} | {row['open']:.2f} | {row['high']:.2f} | {row['low']:.2f} | {row['close']:.2f} | {row['volume']:,.0f} |\n"
+    
+    if total_records > 10:
+      report += f"\n... 还有 {total_records - 10} 条数据\n"
+    
+    return report
+    
+  except Exception as e:
+    return f"获取 {symbol} 分钟级交易数据时发生错误: {str(e)}"

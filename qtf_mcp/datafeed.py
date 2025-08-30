@@ -168,6 +168,112 @@ def fetch_kline_data(symbol: str, start_date: str, end_date: str) -> pd.DataFram
         return None
 
 
+def fetch_minute_data(symbol: str, start_datetime: str, end_datetime: str, period: str = "1") -> pd.DataFrame:
+    """获取分钟级数据
+    
+    Args:
+        symbol (str): 股票代码，格式如 "SH000001" 或 "SZ000001"
+        start_datetime (str): 开始时间，格式如 "2023-12-11 09:30:00"
+        end_datetime (str): 结束时间，格式如 "2023-12-11 15:00:00"
+        period (str): 时间间隔，支持 "1", "5", "15", "30", "60" 分钟
+    
+    Returns:
+        pd.DataFrame: 分钟级数据，包含时间、开盘、收盘、最高、最低、成交量等字段
+    """
+    try:
+        stock_type = get_stock_type(symbol)
+        ak_symbol = convert_symbol_format(symbol)
+        
+        logger.info(f"Fetching minute data for {symbol}, type: {stock_type}, ak_symbol: {ak_symbol}")
+        
+        df = None
+        if stock_type == "stock":
+            # 获取股票分钟级数据
+            try:
+                # 首先尝试指定日期范围
+                df = ak.stock_zh_a_hist_min_em(
+                    symbol=ak_symbol[2:],  # 去掉sh/sz前缀
+                    period=period,
+                    start_date=start_datetime,
+                    end_date=end_datetime,
+                )
+                logger.info(f"Stock minute data API returned: {type(df)}, shape: {df.shape if df is not None else 'None'}")
+                
+                # 如果指定日期范围返回空数据，尝试获取默认最新数据
+                if df is not None and df.empty:
+                    logger.warning(f"No data for specified date range, trying default data for {symbol}")
+                    df = ak.stock_zh_a_hist_min_em(
+                        symbol=ak_symbol[2:],
+                        period=period,
+                    )
+                    logger.info(f"Stock minute data (default) API returned: {type(df)}, shape: {df.shape if df is not None else 'None'}")
+            except Exception as stock_e:
+                logger.error(f"Stock minute data API failed: {stock_e}")
+                return None
+        else:
+            # 获取指数分钟级数据
+            try:
+                # 对于指数，使用不带前缀的代码，如"000001"
+                index_code = ak_symbol[2:] if len(ak_symbol) > 2 else ak_symbol
+                # 首先尝试指定日期范围
+                df = ak.index_zh_a_hist_min_em(
+                    symbol=index_code,  # 使用不带前缀的代码如"000001"
+                    period=period,
+                    start_date=start_datetime,
+                    end_date=end_datetime
+                )
+                logger.info(f"Index minute data API returned: {type(df)}, shape: {df.shape if df is not None else 'None'}")
+                
+                # 如果指定日期范围返回空数据，尝试获取默认最新数据
+                if df is not None and df.empty:
+                    logger.warning(f"No data for specified date range, trying default data for {symbol}")
+                    df = ak.index_zh_a_hist_min_em(
+                        symbol=index_code,
+                        period=period
+                    )
+                    logger.info(f"Index minute data (default) API returned: {type(df)}, shape: {df.shape if df is not None else 'None'}")
+            except Exception as index_e:
+                logger.error(f"Index minute data API failed: {index_e}")
+                return None
+        
+        if df is None:
+            logger.warning(f"No data returned from akshare API for {symbol}")
+            return None
+            
+        if df.empty:
+            logger.warning(f"Empty dataframe returned for {symbol}")
+            return None
+            
+        logger.info(f"Original columns: {list(df.columns)}")
+        
+        # 重命名列以匹配原有格式
+        column_mapping = {
+            '时间': 'datetime',
+            '开盘': 'open',
+            '收盘': 'close',
+            '最高': 'high',
+            '最低': 'low',
+            '成交量': 'volume',
+            '成交额': 'amount'
+        }
+        
+        # 只重命名存在的列
+        existing_mapping = {k: v for k, v in column_mapping.items() if k in df.columns}
+        df = df.rename(columns=existing_mapping)
+        
+        # 转换时间格式
+        if 'datetime' in df.columns:
+            df['datetime'] = pd.to_datetime(df['datetime'])
+            df = df.sort_values('datetime')
+        
+        logger.info(f"Successfully processed {len(df)} rows of minute data for {symbol}")
+        return df
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch minute data for {symbol}: {e}")
+        return None
+
+
 def fetch_finance_data(symbol: str) -> Dict[str, np.ndarray]:
     """获取财务数据"""
     try:
